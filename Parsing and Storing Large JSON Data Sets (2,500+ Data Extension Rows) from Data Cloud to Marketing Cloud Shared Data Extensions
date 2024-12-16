@@ -1,0 +1,100 @@
+<script runat="server">
+Platform.Load("core", "1.1.1");
+try{
+    var adjustedDE = "CUSTOMERS_WITH_FINANCIAL_ACCOUNTS_ADJUSTED";
+    
+    // Step 1: Deleting old data 
+    var apiDel = new Script.Util.WSProxy();
+    
+    // For the Shared Data Extension add the code below with MID and UserId
+    api.setClientId({
+		"ID": "MID",
+		"UserID":"UserID"
+		});
+		
+    var properties = { "CustomerKey": adjustedDE }; 
+    var action = "ClearData";
+    var opts = {};
+    var result = apiDel.performItem("DataExtension", properties, action, opts );
+    
+    // Step 2: Generating the Data Extension Adjusted normalizing the JSON Field
+    var config = {
+        name: "CUSTOMERS_WITH_FINANCIAL_ACCOUNTS", 
+        cols: ["SubscriberKey", "Id", "EmailAddress", "FinancialAccount"]
+    }
+    
+    var prox = new Script.Util.WSProxy();
+    
+    var moreData = true,
+        reqID = Rows = null;
+    
+    while (moreData) {
+    
+        moreData = false;
+    
+        if (reqID == null) {
+            Rows = prox.retrieve("DataExtensionObject[" + config.name + "]", config.cols);
+        } else {
+            Rows = prox.getNextBatch("DataExtensionObject[" + config.name + "]", reqID);
+        }
+
+        var GeneratedRows = 0;
+        
+          if (Rows.Results.length > 0) {
+            moreData = Rows.HasMoreRows;
+            reqID = Rows.RequestID;
+            var convertedResults = [];
+            // Loop through each item in the Results array
+            for (var i = 0; i < Rows.Results.length; i++) {
+                var properties = Rows.Results[i].Properties;
+
+                // Initialize an empty object to store the property map
+                var propertyMap = {};
+
+                // Loop through each property and convert it into a key-value pair in the object
+                for (var j = 0; j < properties.length; j++) {
+                    if (properties[j].Name && properties[j].Value) {
+                        propertyMap[properties[j].Name] = properties[j].Value;
+                    }
+                }
+
+                // Push the property map to the results array
+                convertedResults.push(propertyMap);
+            }
+            var api = new Script.Util.WSProxy(); 
+
+            if (convertedResults.length > 0) {
+                for(var i in convertedResults) {
+                    var jsonObj = Platform.Function.ParseJSON(convertedResults[i]["FinancialAccount"]);
+                    if (jsonObj.length > 0) {
+                        for(var j = 0; j < jsonObj.length; j++ ) {
+                            var item = jsonObj[j];
+                            var result = api.createItem("DataExtensionObject", { 
+                                CustomerKey: adjustedDE,
+                                Properties: [
+                                { Name: "SubscriberKey", Value: convertedResults[i]["SubscriberKey"] },
+                                { Name: "Id", Value: convertedResults[i]["Id"] }, // Here the IDs have to be unique; otherwise it will throw an error
+                                { Name: "FirstName", Value: item["FirstName"] },
+                                { Name: "LastName", Value: item["LastName"] },
+                                { Name: "EmailAddress", Value: convertedResults[i]["EmailAddress"] },
+                                { Name: "OpenDate", Value: item["OpenDate"] },
+                                { Name: "CloseDate", Value: item["CloseDate"] },
+                                { Name: "Name", Value: item["Name"] },
+                                { Name: "IndividualId", Value: item["IndividualId"] },
+                                { Name: "FinancialAccountType", Value: item["FinancialAccountType"] },
+                                { Name: "ContactEmailId", Value: item["ContactEmailId"] },
+                                { Name: "FinancialAccountStatus", Value: item["FinancialAccountStatus"] } 
+                                ] 
+                            });
+                        }
+                    }
+                }
+            }
+          }        
+    }
+}
+catch(error) {
+    var logDE = DataExtension.Init('ErrorLogs'); 
+    logDE.Rows.Add({"Source":"Data Cloud Demo Customers 360","ErrorDescription":Stringify(error)});
+}
+</script>
